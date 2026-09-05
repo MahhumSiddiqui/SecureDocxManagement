@@ -1,0 +1,9 @@
+process.env.DATABASE_URL ??= "postgresql://securedocs:devpassword@localhost:5433/securedocs";
+process.env.PORT ??= "3000";
+process.env.NODE_ENV = "test";
+process.env.SECURE_MODE ??= "true";
+process.env.JWT_SECRET ??= "test-secret-that-is-at-least-32-characters";
+process.env.KEK_MASTER ??= "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+process.env.STORAGE_PATH ??= "./storage/test-blobs";
+process.env.MAX_UPLOAD_BYTES ??= "26214400";
+process.env.WEB_ORIGIN ??= "http://127.0.0.1:5173";

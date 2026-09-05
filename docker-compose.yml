@@ -1,0 +1,39 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: securedocs
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: securedocs
+    ports:
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+  api:
+    build: ./apps/api
+    environment:
+      DATABASE_URL: postgresql://securedocs:devpassword@postgres:5432/securedocs
+      PORT: 3000
+      NODE_ENV: development
+      SECURE_MODE: "true"
+      JWT_SECRET: replace-with-at-least-32-random-characters
+      KEK_MASTER: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      STORAGE_PATH: /app/storage/blobs
+      MAX_UPLOAD_BYTES: 26214400
+      WEB_ORIGIN: http://127.0.0.1:5173
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - postgres
+  web:
+    image: node:24
+    working_dir: /app
+    command: npm run dev -- --host 127.0.0.1
+    environment:
+      VITE_API_URL: http://127.0.0.1:3000/api
+    ports:
+      - "127.0.0.1:5173:5173"
+    volumes:
+      - ./apps/web:/app
+volumes:
+  postgres-data:

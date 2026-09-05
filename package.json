@@ -1,0 +1,13 @@
+{
+  "name": "securedocs",
+  "private": true,
+  "workspaces": ["apps/api", "apps/web"],
+  "scripts": {
+    "dev": "npm --workspace apps/api run dev",
+    "build": "npm --workspace apps/api run build",
+    "test": "npm --workspace apps/api run test",
+    "db:migrate": "npm --workspace apps/api run db:migrate",
+    "db:seed": "npm --workspace apps/api run db:seed",
+    "attack": "npm --workspace tools/attack-harness run attack"
+  }
+}
