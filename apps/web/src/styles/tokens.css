@@ -1,0 +1,10 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&family=Source+Sans+3:wght@400;600&display=swap');
+:root { --ink:#14202E; --paper:#F7F5F1; --slate:#4A6E8C; --sand:#E8E2D8; --amber:#B87333; --rust:#9B3B2F; --white:#FFFFFF; }
+* { box-sizing:border-box; }
+html,body,#root { margin:0; min-height:100%; }
+body { background:var(--paper); color:var(--ink); font-family:'Source Sans 3',sans-serif; font-size:16px; }
+button,input,select,textarea { font:inherit; }
+button,a,input,select,textarea { outline-offset:3px; }
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible { outline:3px solid var(--amber); outline-offset:2px; }
+a { color:var(--slate); }
+.mono { font-family:'JetBrains Mono',monospace; font-size:12px; overflow-wrap:anywhere; }
