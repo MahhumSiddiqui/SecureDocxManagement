@@ -7,6 +7,7 @@ import {
 import argon2 from "argon2";
 import { z } from "zod";
 import { prisma } from "../../../db.js";
+import { config } from "../../../config.js";
 import { AppError } from "../../../middleware/errors.js";
 import { authenticate } from "../../../middleware/auth.js";
 import {
@@ -19,7 +20,45 @@ import { recordAudit } from "../../../services/audit.service.js";
 import { toShareLinkSummary } from "../../../serializers.js";
 
 const tokenSchema = z.string().regex(/^[A-Za-z0-9_-]{40,50}$/);
+// Vulnerable-mode tokens are short and time-derived, so the strict
+// length check would reject them before lookup.
+const looseTokenSchema = z.string().regex(/^[A-Za-z0-9_-]{4,60}$/);
 const uuidSchema = z.string().uuid();
+
+// ----------------------------------------------------------
+// [VULN-05] Insecure Share Tokens — CWE-330 / CWE-613 — OWASP A02:2021
+//
+// Active ONLY when SECURE_MODE=false.
+//
+// Root cause, three parts:
+//   1. Tokens are derived from the current time plus an in-process
+//      counter, so an attacker who knows roughly when a link was
+//      created can enumerate the small remaining keyspace.
+//   2. The raw token is stored in the database instead of a hash,
+//      so read access to the table yields working links for every
+//      shared document.
+//   3. Expiry, revocation and single-use are not enforced on lookup,
+//      so a link works forever and revoking it has no effect.
+//
+// Secure behaviour: 32 bytes from crypto.randomBytes (256 bits of
+// entropy), persisted only as a SHA-256 hash, shown to the creator
+// exactly once, and checked against expiry, revocation and use count
+// on every access.
+// ----------------------------------------------------------
+let vulnerableTokenCounter = 0;
+
+function shareToken(): string {
+  if (!config.secureMode) {
+    // VULNERABLE: predictable, time-derived, sequential.
+    return Date.now().toString(36) + (vulnerableTokenCounter++).toString(36);
+  }
+  return randomToken();
+}
+
+function storedToken(token: string): string {
+  // VULNERABLE: raw token persisted instead of its hash.
+  return config.secureMode ? sha256(token) : token;
+}
 
 function unavailable(): AppError {
   return new AppError(404, "NOT_FOUND", "This link is not available.");
@@ -34,7 +73,8 @@ function parseUuid(value: string | string[]): string {
 }
 
 function parseToken(value: string | string[]): string {
-  const parsed = tokenSchema.safeParse(value);
+  const schema = config.secureMode ? tokenSchema : looseTokenSchema;
+  const parsed = schema.safeParse(value);
   if (!parsed.success) {
     throw unavailable();
   }
@@ -57,11 +97,19 @@ async function requireOwner(documentId: string, userId: string) {
 
 async function resolveToken(token: string) {
   const shareLink = await prisma.shareLink.findUnique({
-    where: { tokenHash: sha256(token) },
+    where: { tokenHash: storedToken(token) },
     include: { document: true },
   });
+  if (!shareLink) {
+    throw unavailable();
+  }
+
+  // VULNERABLE: no expiry, revocation or single-use enforcement.
+  if (!config.secureMode) {
+    return shareLink;
+  }
+
   if (
-    !shareLink ||
     shareLink.revokedAt ||
     !shareLink.expiresAt ||
     shareLink.expiresAt <= new Date() ||
@@ -92,10 +140,10 @@ async function createShare(
         ...req.body,
         password: req.body.password === "" ? undefined : req.body.password,
       });
-    const token = randomToken();
+    const token = shareToken();
     const shareLink = await prisma.shareLink.create({
       data: {
-        tokenHash: sha256(token),
+        tokenHash: storedToken(token),
         documentId,
         createdById: req.user!.id,
         expiresAt: new Date(Date.now() + body.expiresInHours * 3_600_000),
@@ -228,13 +276,17 @@ async function downloadPublicShare(
     const key = await prisma.documentKey.findUnique({
       where: { documentId: shareLink.documentId },
     });
-    if (!key) {
+    const blob = await readBlob(shareLink.document.storageKey);
+    // Documents uploaded while SECURE_MODE=false are stored in plaintext
+    // and have no DocumentKey row, so there is nothing to decrypt.
+    let plaintext: Buffer;
+    if (key) {
+      plaintext = decryptBuffer(blob, key);
+    } else if (!config.secureMode) {
+      plaintext = blob;
+    } else {
       throw new AppError(500, "INTERNAL", "An internal error occurred.");
     }
-    const plaintext = decryptBuffer(
-      await readBlob(shareLink.document.storageKey),
-      key,
-    );
     await prisma.shareLink.update({
       where: { id: shareLink.id },
       data: { useCount: { increment: 1 } },
