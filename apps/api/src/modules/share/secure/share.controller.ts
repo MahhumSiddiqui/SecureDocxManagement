@@ -88,7 +88,10 @@ async function createShare(
         singleUse: z.boolean(),
         password: z.string().min(12).optional(),
       })
-      .parse(req.body);
+      .parse({
+        ...req.body,
+        password: req.body.password === "" ? undefined : req.body.password,
+      });
     const token = randomToken();
     const shareLink = await prisma.shareLink.create({
       data: {

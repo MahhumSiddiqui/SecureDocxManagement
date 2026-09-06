@@ -14,7 +14,9 @@ export function setAccessToken(token: string | null): void {
 }
 
 function csrfToken(): string | null {
-  const cookie = document.cookie.split("; ").find((item) => item.startsWith("sd_csrf="));
+  const cookie = document.cookie
+    .split("; ")
+    .find((item) => item.startsWith("sd_csrf="));
   return cookie ? decodeURIComponent(cookie.slice("sd_csrf=".length)) : null;
 }
 
@@ -37,12 +39,20 @@ async function refreshAccessToken(): Promise<string | null> {
 }
 
 api.interceptors.response.use(undefined, async (error: AxiosError) => {
-  const original = error.config as (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
-  if (error.response?.status !== 401 || !original || original._retry || original.url?.includes("/auth/refresh")) {
+  const original = error.config as
+    (InternalAxiosRequestConfig & { _retry?: boolean }) | undefined;
+  if (
+    error.response?.status !== 401 ||
+    !original ||
+    original._retry ||
+    original.url?.includes("/auth/refresh")
+  ) {
     return Promise.reject(error);
   }
   original._retry = true;
-  refreshing ??= refreshAccessToken().finally(() => { refreshing = null; });
+  refreshing ??= refreshAccessToken().finally(() => {
+    refreshing = null;
+  });
   const token = await refreshing;
   if (!token) {
     window.location.assign("/login");

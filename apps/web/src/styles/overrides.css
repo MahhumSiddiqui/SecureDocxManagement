@@ -1,3 +1,46 @@
-.main { min-width: 0; }
-.table-wrap { max-width: 100%; }
-.eyebrow { display: none; }
+.main {
+  min-width: 0;
+}
+.table-wrap {
+  max-width: 100%;
+}
+.eyebrow {
+  display: none;
+}
+.password-control {
+  display: flex;
+  position: relative;
+}
+.password-control input {
+  width: 100%;
+  padding-right: 62px;
+}
+.password-toggle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  height: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--slate);
+  font-weight: 600;
+  padding: 0 10px;
+  cursor: pointer;
+}
+.field-error {
+  grid-column: 1 / -1;
+  color: var(--rust);
+  font-size: 14px;
+  font-weight: 600;
+}
+.registration-success {
+  display: grid;
+  gap: 16px;
+}
+.registration-success h1 {
+  margin: 0;
+  font-size: 28px;
+}
+.registration-success p {
+  color: #52616b;
+}
