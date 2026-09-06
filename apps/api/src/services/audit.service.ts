@@ -1,8 +1,43 @@
 import { createHash } from "node:crypto";
 import { prisma } from "../db.js";
+import { config } from "../config.js";
 import type { Prisma } from "@prisma/client";
+
 const genesis = "0".repeat(64);
 let appendQueue: Promise<void> = Promise.resolve();
+
+// ----------------------------------------------------------
+// [VULN-06] Insufficient Logging & Monitoring
+// CWE-778 — OWASP A09:2021
+//
+// Active ONLY when SECURE_MODE=false.
+//
+// Root cause, two parts:
+//   1. The events that would reveal an attack in progress are simply
+//      not recorded: failed logins, authorisation denials, downloads
+//      and share-link access. VULN-01 through VULN-05 can therefore
+//      be exploited without leaving any trace in the audit trail.
+//   2. Records that are written carry empty prevHash and recordHash
+//      values, so there is no chain linking them. Any record can be
+//      altered or deleted afterwards and verifyChain() cannot tell.
+//
+// Together these defeat both detection and post-incident
+// reconstruction — the two things an audit log exists for.
+//
+// Secure behaviour (below): every security-relevant event is written
+// synchronously under an advisory lock, and each record is hashed
+// together with its predecessor so that any later modification
+// breaks the chain and is detectable.
+// ----------------------------------------------------------
+const UNLOGGED_IN_VULNERABLE_MODE = new Set([
+  "AUTH_LOGIN_FAILED",
+  "AUTH_LOCKOUT",
+  "ACCESS_DENIED",
+  "DOC_DOWNLOAD",
+  "SHARE_ACCESS",
+  "SHARE_ACCESS_FAILED",
+]);
+
 export type AuditInput = {
   eventType: string;
   actorId?: string;
@@ -14,7 +49,30 @@ export type AuditInput = {
   userAgent?: string;
   metadata?: Prisma.InputJsonValue;
 };
+
 export async function recordAudit(input: AuditInput): Promise<void> {
+  if (!config.secureMode) {
+    // VULNERABLE: security-relevant events are dropped entirely.
+    if (UNLOGGED_IN_VULNERABLE_MODE.has(input.eventType)) {
+      return;
+    }
+    // VULNERABLE: remaining records are written with no hash chain,
+    // so tampering cannot be detected.
+    const last = await prisma.auditLog.findFirst({
+      orderBy: { sequence: "desc" },
+    });
+    await prisma.auditLog.create({
+      data: {
+        ...input,
+        prevHash: "",
+        recordHash: "",
+        createdAt: new Date(),
+      },
+    });
+    void last;
+    return;
+  }
+
   const append = appendQueue.then(async () =>
     prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(741923);`;
@@ -52,6 +110,7 @@ export async function recordAudit(input: AuditInput): Promise<void> {
   appendQueue = append.catch(() => undefined);
   await append;
 }
+
 export async function verifyChain(): Promise<{
   valid: boolean;
   recordsChecked: number;
