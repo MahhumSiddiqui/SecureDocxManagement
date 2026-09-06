@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID, createHash } from "node:crypto";
 import type { Response, Router } from "express";
 import { Router as ExpressRouter } from "express";
 import argon2 from "argon2";
@@ -22,7 +22,27 @@ const common = new Set([
   "welcome123456",
   "Passw0rd!Demo".toLowerCase(),
 ]);
+
+// ----------------------------------------------------------
+// [VULN-04] Weak Password Storage — CWE-916 — OWASP A02:2021
+//
+// Active ONLY when SECURE_MODE=false.
+//
+// Root cause: passwords are hashed with unsalted MD5, a fast
+// general-purpose digest. MD5 is not a password hash: it has no
+// salt (identical passwords produce identical digests, so rainbow
+// tables apply directly) and no work factor (billions of candidates
+// can be tested per second on commodity hardware).
+//
+// Secure behaviour: Argon2id with a per-user salt and tuned memory,
+// time and parallelism costs, per the OWASP Password Storage Cheat
+// Sheet minimums.
+// ----------------------------------------------------------
 async function hashPassword(password: string): Promise<string> {
+  if (!config.secureMode) {
+    // VULNERABLE: unsalted MD5, no work factor.
+    return createHash("md5").update(password).digest("hex");
+  }
   return argon2.hash(password, {
     type: argon2.argon2id,
     memoryCost: 19456,
@@ -30,6 +50,23 @@ async function hashPassword(password: string): Promise<string> {
     parallelism: 1,
   });
 }
+
+// In vulnerable mode the store holds a mix of Argon2id digests (from
+// seeded accounts) and MD5 digests (from registrations made while
+// SECURE_MODE=false), so verification must handle both. A dual-verify
+// path like this is common in legacy systems midway through a hash
+// migration, and is itself a weakness: it keeps the weak format alive
+// indefinitely, since nothing forces the old digests to be upgraded.
+async function verifyPassword(
+  hash: string,
+  password: string,
+): Promise<boolean> {
+  if (!config.secureMode && !hash.startsWith("$argon2")) {
+    return createHash("md5").update(password).digest("hex") === hash;
+  }
+  return argon2.verify(hash, password).catch(() => false);
+}
+
 function accessToken(user: {
   id: string;
   email: string;
@@ -41,6 +78,7 @@ function accessToken(user: {
     { algorithm: "HS256", expiresIn: "15m" },
   );
 }
+
 function setSessionCookies(res: Response, refresh: string, csrf: string): void {
   res.cookie("sd_refresh", refresh, {
     httpOnly: true,
@@ -57,8 +95,10 @@ function setSessionCookies(res: Response, refresh: string, csrf: string): void {
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 }
+
 export function router(): Router {
   const r = ExpressRouter();
+
   r.post("/register", async (req, res, next) => {
     try {
       const body = z
@@ -99,6 +139,7 @@ export function router(): Router {
       next(e);
     }
   });
+
   r.post("/login", async (req, res, next) => {
     const email =
       typeof req.body?.email === "string" ? req.body.email.toLowerCase() : "";
@@ -107,7 +148,7 @@ export function router(): Router {
     try {
       const user = await prisma.user.findUnique({ where: { email } });
       const hash = user?.passwordHash ?? dummyHash;
-      const valid = await argon2.verify(hash, password).catch(() => false);
+      const valid = await verifyPassword(hash, password);
       const recent = await prisma.loginAttempt.count({
         where: {
           email,
@@ -181,6 +222,7 @@ export function router(): Router {
       next(e);
     }
   });
+
   r.post("/refresh", async (req, res, next) => {
     try {
       const raw = req.cookies?.sd_refresh as string | undefined;
@@ -240,6 +282,7 @@ export function router(): Router {
       next(e);
     }
   });
+
   r.post("/logout", async (req, res, next) => {
     try {
       const raw = req.cookies?.sd_refresh as string | undefined;
@@ -266,6 +309,7 @@ export function router(): Router {
       next(e);
     }
   });
+
   r.get("/me", async (req, res, next) => {
     try {
       if (!req.user)
@@ -279,5 +323,6 @@ export function router(): Router {
       next(e);
     }
   });
+
   return r;
 }
