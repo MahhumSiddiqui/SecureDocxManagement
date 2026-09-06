@@ -23,6 +23,18 @@ function cookieHeader(response: request.Response): string[] {
     .map((value) => value.split(";")[0]);
 }
 
+function expectNoSensitiveFields(response: request.Response): void {
+  const body = JSON.stringify(response.body);
+  for (const field of [
+    "passwordHash",
+    "storageKey",
+    "wrappedDek",
+    "tokenHash",
+  ]) {
+    expect(body).not.toContain(field);
+  }
+}
+
 describe("encryption services", () => {
   it("round-trips encrypted content", () => {
     const plaintext = Buffer.from("confidential test document");
@@ -56,6 +68,7 @@ describeIntegration("secure API contract", () => {
   let shareToken = "";
 
   beforeAll(async () => {
+    await prisma.auditLog.deleteMany();
     await prisma.loginAttempt.deleteMany();
     await prisma.user.updateMany({
       data: { failedAttempts: 0, lockedUntil: null, status: "ACTIVE" },
@@ -156,6 +169,39 @@ describeIntegration("secure API contract", () => {
           .set("Authorization", `Bearer ${login.body.accessToken}`)
       ).status,
     ).toBe(403);
+  });
+
+  it("never exposes persistence-only fields in JSON API responses", async () => {
+    const ownerLogin = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "owner@securedocs.test", password: "Passw0rd!Demo" });
+    const ownerAuth = {
+      Authorization: `Bearer ${ownerLogin.body.accessToken}`,
+    };
+    const adminLogin = await request(app)
+      .post("/api/auth/login")
+      .send({ email: "admin@securedocs.test", password: "Passw0rd!Demo" });
+    const adminAuth = {
+      Authorization: `Bearer ${adminLogin.body.accessToken}`,
+    };
+    const responses = [
+      ownerLogin,
+      adminLogin,
+      await request(app).get("/api/auth/me").set(ownerAuth),
+      await request(app).get("/api/documents").set(ownerAuth),
+      await request(app).get(`/api/documents/${documentId}`).set(ownerAuth),
+      await request(app)
+        .get(`/api/documents/${documentId}/permissions`)
+        .set(ownerAuth),
+      await request(app)
+        .get(`/api/documents/${documentId}/share`)
+        .set(ownerAuth),
+      await request(app).get("/api/admin/users").set(adminAuth),
+      await request(app).get("/api/audit").set(adminAuth),
+    ];
+    for (const response of responses) {
+      expectNoSensitiveFields(response);
+    }
   });
 
   it("rejects disallowed extensions, mismatched magic bytes, and EICAR", async () => {

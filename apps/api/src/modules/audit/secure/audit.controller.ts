@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../../../db.js";
 import { verifyChain, recordAudit } from "../../../services/audit.service.js";
+import { toAuditEntry } from "../../../serializers.js";
 export function router(): Router {
   const r = Router();
   r.get("/", async (req, res, next) => {
@@ -31,7 +32,12 @@ export function router(): Router {
         actorEmail: req.user!.email,
         outcome: "SUCCESS",
       });
-      return res.json({ items, page, pageSize, total });
+      return res.json({
+        items: items.map(toAuditEntry),
+        page,
+        pageSize,
+        total,
+      });
     } catch (e) {
       next(e);
     }

@@ -3,32 +3,7 @@ import { z } from "zod";
 import { prisma } from "../../../db.js";
 import { AppError } from "../../../middleware/errors.js";
 import { recordAudit } from "../../../services/audit.service.js";
-function entry(p: {
-  id: string;
-  documentId: string;
-  granteeId: string;
-  canView: boolean;
-  canDownload: boolean;
-  canReshare: boolean;
-  grantedAt: Date;
-  expiresAt: Date | null;
-  grantee: { email: string; displayName: string };
-  grantedBy: { email: string };
-}) {
-  return {
-    id: p.id,
-    documentId: p.documentId,
-    granteeId: p.granteeId,
-    granteeEmail: p.grantee.email,
-    granteeName: p.grantee.displayName,
-    canView: p.canView,
-    canDownload: p.canDownload,
-    canReshare: p.canReshare,
-    grantedByEmail: p.grantedBy.email,
-    grantedAt: p.grantedAt,
-    expiresAt: p.expiresAt,
-  };
-}
+import { toPermissionEntry } from "../../../serializers.js";
 async function owner(id: string, userId: string) {
   const d = await prisma.document.findUnique({ where: { id } });
   if (!d || d.ownerId !== userId)
@@ -48,7 +23,7 @@ export function router(): Router {
         where: { documentId: req.params.id },
         include: { grantee: true, grantedBy: true },
       });
-      return res.json({ permissions: rows.map(entry) });
+      return res.json({ permissions: rows.map(toPermissionEntry) });
     } catch (e) {
       next(e);
     }
@@ -94,7 +69,7 @@ export function router(): Router {
         targetId: p.id,
         outcome: "SUCCESS",
       });
-      return res.status(201).json({ permission: entry(p) });
+      return res.status(201).json({ permission: toPermissionEntry(p) });
     } catch (e) {
       next(e);
     }
@@ -131,7 +106,7 @@ export function router(): Router {
         targetId: p.id,
         outcome: "SUCCESS",
       });
-      return res.json({ permission: entry(p) });
+      return res.json({ permission: toPermissionEntry(p) });
     } catch (e) {
       next(e);
     }

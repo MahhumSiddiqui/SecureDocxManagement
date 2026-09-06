@@ -16,35 +16,10 @@ import {
 } from "../../../services/crypto.service.js";
 import { readBlob } from "../../../services/storage.service.js";
 import { recordAudit } from "../../../services/audit.service.js";
+import { toShareLinkSummary } from "../../../serializers.js";
 
 const tokenSchema = z.string().regex(/^[A-Za-z0-9_-]{40,50}$/);
 const uuidSchema = z.string().uuid();
-
-type ShareLinkRow = {
-  id: string;
-  documentId: string;
-  canDownload: boolean;
-  passwordHash: string | null;
-  expiresAt: Date | null;
-  singleUse: boolean;
-  useCount: number;
-  revokedAt: Date | null;
-  createdAt: Date;
-};
-
-function shareLinkSummary(shareLink: ShareLinkRow) {
-  return {
-    id: shareLink.id,
-    documentId: shareLink.documentId,
-    canDownload: shareLink.canDownload,
-    hasPassword: Boolean(shareLink.passwordHash),
-    expiresAt: shareLink.expiresAt,
-    singleUse: shareLink.singleUse,
-    useCount: shareLink.useCount,
-    revokedAt: shareLink.revokedAt,
-    createdAt: shareLink.createdAt,
-  };
-}
 
 function unavailable(): AppError {
   return new AppError(404, "NOT_FOUND", "This link is not available.");
@@ -141,13 +116,11 @@ async function createShare(
       targetId: shareLink.id,
       outcome: "SUCCESS",
     });
-    res
-      .status(201)
-      .json({
-        shareLink: shareLinkSummary(shareLink),
-        url: `/share/${token}`,
-        token,
-      });
+    res.status(201).json({
+      shareLink: toShareLinkSummary(shareLink),
+      url: `/share/${token}`,
+      token,
+    });
   } catch (error) {
     next(error);
   }
@@ -164,7 +137,7 @@ async function listShares(
     const shareLinks = await prisma.shareLink.findMany({
       where: { documentId },
     });
-    res.json({ shareLinks: shareLinks.map(shareLinkSummary) });
+    res.json({ shareLinks: shareLinks.map(toShareLinkSummary) });
   } catch (error) {
     next(error);
   }

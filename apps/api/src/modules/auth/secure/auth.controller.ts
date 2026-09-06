@@ -9,6 +9,7 @@ import { config } from "../../../config.js";
 import { randomToken, sha256 } from "../../../services/crypto.service.js";
 import { recordAudit } from "../../../services/audit.service.js";
 import { AppError } from "../../../middleware/errors.js";
+import { toUserSummary } from "../../../serializers.js";
 
 const dummyHash =
   "$argon2id$v=19$m=19456,t=2,p=1$AAAAAAAAAAAAAAAAAAAAAA$AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
@@ -21,23 +22,6 @@ const common = new Set([
   "welcome123456",
   "Passw0rd!Demo".toLowerCase(),
 ]);
-const userSummary = (u: {
-  id: string;
-  email: string;
-  displayName: string;
-  role: string;
-  status: string;
-  createdAt: Date;
-  lastLoginAt: Date | null;
-}) => ({
-  id: u.id,
-  email: u.email,
-  displayName: u.displayName,
-  role: u.role,
-  status: u.status,
-  createdAt: u.createdAt,
-  lastLoginAt: u.lastLoginAt,
-});
 async function hashPassword(password: string): Promise<string> {
   return argon2.hash(password, {
     type: argon2.argon2id,
@@ -95,7 +79,7 @@ export function router(): Router {
           outcome: "FAILURE",
           metadata: { collision: true },
         });
-        return res.status(201).json({ user: userSummary(existing) });
+        return res.status(201).json({ user: toUserSummary(existing) });
       }
       const user = await prisma.user.create({
         data: {
@@ -110,7 +94,7 @@ export function router(): Router {
         actorEmail: user.email,
         outcome: "SUCCESS",
       });
-      return res.status(201).json({ user: userSummary(user) });
+      return res.status(201).json({ user: toUserSummary(user) });
     } catch (e) {
       next(e);
     }
@@ -191,7 +175,7 @@ export function router(): Router {
       setSessionCookies(res, refresh, csrf);
       return res.json({
         accessToken: accessToken(updated),
-        user: userSummary(updated),
+        user: toUserSummary(updated),
       });
     } catch (e) {
       next(e);
@@ -290,7 +274,7 @@ export function router(): Router {
           "UNAUTHENTICATED",
           "Authentication is required.",
         );
-      return res.json({ user: userSummary(req.user) });
+      return res.json({ user: toUserSummary(req.user) });
     } catch (e) {
       next(e);
     }

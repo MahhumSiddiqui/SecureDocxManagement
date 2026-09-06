@@ -14,25 +14,16 @@ import {
 } from "../../../services/storage.service.js";
 import { decryptBuffer } from "../../../services/crypto.service.js";
 import { validateUpload, safeFilename } from "./upload.pipeline.js";
+import {
+  toDocumentDetail,
+  toDocumentSummary,
+  toShareLinkSummary,
+  toPermissionEntry,
+} from "../../../serializers.js";
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 25 * 1024 * 1024, files: 1 },
 });
-const summary = (
-  d: {
-    id: string;
-    title: string;
-    category: string;
-    originalName: string;
-    mimeType: string;
-    sizeBytes: number;
-    ownerId: string;
-    sha256: string;
-    createdAt: Date;
-    owner: { email: string };
-  },
-  accessLevel: "OWNER" | "SHARED",
-) => ({ ...d, ownerEmail: d.owner.email, accessLevel });
 async function findAccess(
   id: string,
   userId: string,
@@ -126,7 +117,7 @@ export function router(): Router {
       ]);
       return res.json({
         items: items.map((d) =>
-          summary(d, d.ownerId === user.id ? "OWNER" : "SHARED"),
+          toDocumentSummary(d, d.ownerId === user.id ? "OWNER" : "SHARED"),
         ),
         page,
         pageSize,
@@ -177,16 +168,11 @@ export function router(): Router {
           targetId: d.id,
           outcome: "SUCCESS",
         });
-        return res
-          .status(201)
-          .json({
-            document: {
-              ...summary(d, "OWNER"),
-              description: d.description,
-              scanVerdict: d.scanVerdict,
-              updatedAt: d.updatedAt,
-            },
-          });
+        return res.status(201).json({
+          document: {
+            ...toDocumentDetail(d, "OWNER"),
+          },
+        });
       } catch (e) {
         await deleteBlob(storageKey);
         throw e;
@@ -226,35 +212,10 @@ export function router(): Router {
       });
       return res.json({
         document: {
-          ...summary(d, level),
-          description: d.description,
-          scanVerdict: d.scanVerdict,
-          updatedAt: d.updatedAt,
+          ...toDocumentDetail(d, level),
         },
-        permissions: permissions.map((p) => ({
-          id: p.id,
-          documentId: p.documentId,
-          granteeId: p.granteeId,
-          granteeEmail: p.grantee.email,
-          granteeName: p.grantee.displayName,
-          canView: p.canView,
-          canDownload: p.canDownload,
-          canReshare: p.canReshare,
-          grantedByEmail: p.grantedBy.email,
-          grantedAt: p.grantedAt,
-          expiresAt: p.expiresAt,
-        })),
-        shareLinks: shareLinks.map((s) => ({
-          id: s.id,
-          documentId: s.documentId,
-          canDownload: s.canDownload,
-          hasPassword: !!s.passwordHash,
-          expiresAt: s.expiresAt,
-          singleUse: s.singleUse,
-          useCount: s.useCount,
-          revokedAt: s.revokedAt,
-          createdAt: s.createdAt,
-        })),
+        permissions: permissions.map(toPermissionEntry),
+        shareLinks: shareLinks.map(toShareLinkSummary),
       });
     } catch (e) {
       next(e);
@@ -329,10 +290,7 @@ export function router(): Router {
       });
       return res.json({
         document: {
-          ...summary(updated, "OWNER"),
-          description: updated.description,
-          scanVerdict: updated.scanVerdict,
-          updatedAt: updated.updatedAt,
+          ...toDocumentDetail(updated, "OWNER"),
         },
       });
     } catch (e) {

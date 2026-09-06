@@ -2,23 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../../../db.js";
 import { recordAudit } from "../../../services/audit.service.js";
-const summary = (u: {
-  id: string;
-  email: string;
-  displayName: string;
-  role: string;
-  status: string;
-  createdAt: Date;
-  lastLoginAt: Date | null;
-}) => ({
-  id: u.id,
-  email: u.email,
-  displayName: u.displayName,
-  role: u.role,
-  status: u.status,
-  createdAt: u.createdAt,
-  lastLoginAt: u.lastLoginAt,
-});
+import { toUserSummary } from "../../../serializers.js";
 export function router(): Router {
   const r = Router();
   r.get("/users", async (_req, res, next) => {
@@ -26,7 +10,7 @@ export function router(): Router {
       return res.json({
         users: (
           await prisma.user.findMany({ orderBy: { createdAt: "asc" } })
-        ).map(summary),
+        ).map(toUserSummary),
       });
     } catch (e) {
       next(e);
@@ -60,7 +44,7 @@ export function router(): Router {
         outcome: "SUCCESS",
         metadata: body,
       });
-      return res.json({ user: summary(u) });
+      return res.json({ user: toUserSummary(u) });
     } catch (e) {
       next(e);
     }
