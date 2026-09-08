@@ -49,8 +49,15 @@ export function router(): Router {
         throw new AppError(400, "VALIDATION_ERROR", "A file is required.");
       }
 
-      // VULNERABLE: original filename used directly as the storage key.
-      const storageKey = path.basename(req.file.originalname);
+      // VULNERABLE: storage key is built from the client-supplied filename.
+      // A short random suffix only prevents accidental collisions across
+      // repeated test runs; the attacker-controlled original name is still
+      // used, which is the actual weakness (path/extension controlled by the
+      // uploader).
+      const storageKey =
+        path.basename(req.file.originalname) +
+        "-" +
+        Math.random().toString(36).slice(2, 8);
 
       // VULNERABLE: plaintext written to disk — no encryption, no DocumentKey row.
       await writeBlob(storageKey, req.file.buffer);
